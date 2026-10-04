@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from ..util import log, which
+from ..util import log, run, which
 
 # ---------------------------------------------------------------------------
 # input device helpers
@@ -256,9 +256,5 @@ class Inhibitor:
 def list_inhibitors() -> str:
     if not which("systemd-inhibit"):
         return ""
-    try:
-        proc = subprocess.run(["systemd-inhibit", "--list"], stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return (proc.stdout or b"").decode(errors="replace")
+    proc = run(["systemd-inhibit", "--list"], timeout=10)
+    return proc.stdout or ""  # run() already collects text

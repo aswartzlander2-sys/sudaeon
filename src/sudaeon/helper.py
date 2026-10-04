@@ -48,7 +48,13 @@ ADMIN_VERBS = {
     "pam-revert", "users-list", "version",
 } | MASTER_VERBS
 
-ROOT_ONLY_VERBS = {"install", "reset-master", "repair", "pam-revert", "service"}
+# Verbs that only somebody who is already root can reach.  They are the glue
+# between dpkg and Sudaeon: postinst configures the system and prerm takes the
+# hooks out again.  They are checked for root (like every helper call) and
+# deliberately skip the administrator test, because the account that runs
+# "apt install" is not an Administrator yet - the install itself is what makes
+# it one.  Neither verb can change the master password or an existing policy.
+PACKAGE_VERBS = {"configure-package", "unconfigure-package"}
 
 
 class HelperFailure(Exception):
@@ -170,6 +176,36 @@ def verb_install(password: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not report.get("ok"):
         raise HelperFailure("; ".join(report.get("warnings") or ["installation failed"]))
     return _ok("Sudaeon installed", report)
+
+
+def verb_configure_package(_password: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Finish an installation performed by dpkg (called from postinst).
+
+    dpkg cannot ask for a master password, and on a fresh installation none
+    exists yet, so this verb deliberately takes no password: it only writes the
+    default policy and the enforcement hooks, never the verifier.
+    """
+    from . import installer
+    if os.geteuid() != 0:
+        raise HelperFailure("configuring Sudaeon requires root")
+    user = str(payload.get("user") or "")
+    if not user and invoking_uid():
+        user = username_of(invoking_uid()) or ""
+    report = installer.configure_from_package(invoking_user=user,
+                                              force=bool(payload.get("force")))
+    if not report.get("ok"):
+        raise HelperFailure("; ".join(report.get("warnings") or
+                                      ["the configuration failed"]))
+    return _ok("Sudaeon is configured", report)
+
+
+def verb_unconfigure_package(_password: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Remove the enforcement hooks before dpkg deletes the program (prerm)."""
+    from . import installer
+    if os.geteuid() != 0:
+        raise HelperFailure("removing the Sudaeon hooks requires root")
+    report = installer.revert_from_package(purge=bool(payload.get("purge")))
+    return _ok("the Sudaeon enforcement hooks were removed", report)
 
 
 def verb_uninstall(password: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -540,6 +576,8 @@ VERBS: dict[str, Callable[[str, dict[str, Any]], dict[str, Any]]] = {
     "regenerate-recovery": verb_regenerate_recovery,
     "repair-vault": verb_repair_vault,
     "repair": verb_repair,
+    "configure-package": verb_configure_package,
+    "unconfigure-package": verb_unconfigure_package,
     "pam-apply": verb_pam_apply,
     "pam-revert": verb_pam_revert,
     "app-add": verb_app_add,
@@ -568,11 +606,13 @@ def dispatch(argv: list[str]) -> int:
     try:
         password, rest = _read_stdin()
         payload = _payload(rest)
-        allowed, reason = caller_is_privileged()
-        if not allowed:
-            audit.append(f"helper:{verb}", "deny", user=username_of(invoking_uid()) or "?",
-                         uid=invoking_uid(), source="helper", detail=reason)
-            raise HelperFailure(reason)
+        if verb not in PACKAGE_VERBS:
+            allowed, reason = caller_is_privileged()
+            if not allowed:
+                audit.append(f"helper:{verb}", "deny",
+                             user=username_of(invoking_uid()) or "?",
+                             uid=invoking_uid(), source="helper", detail=reason)
+                raise HelperFailure(reason)
         if verb in MASTER_VERBS and not password:
             raise HelperFailure("the master password is required")
         result = VERBS[verb](password, payload)

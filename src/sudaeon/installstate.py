@@ -56,7 +56,7 @@ def _dpkg_installed() -> bool:
     if not which("dpkg-query"):
         return False
     proc = run(["dpkg-query", "-W", "-f=${Status}", "sudaeon"], timeout=10)
-    return b"install ok installed" in (proc.stdout or b"")
+    return "install ok installed" in (proc.stdout or "")
 
 
 def find_conflict() -> str | None:
@@ -69,7 +69,7 @@ def find_conflict() -> str | None:
         return (f"installed on this computer at {where} by {who} (version {version})")
     if paths.LIB_DIR.exists() and any(paths.LIB_DIR.iterdir()):
         return f"Sudaeon files are present in {paths.LIB_DIR}"
-    if paths.PAM_MODULE.exists() or paths.PAM_MODULE_ALT.exists():
+    if paths.pam_module_installed() is not None:
         return "the Sudaeon PAM module is present in /lib/security"
     if _dpkg_installed():
         return "the sudaeon package is installed"
@@ -84,7 +84,7 @@ def installation_details() -> dict[str, Any]:
         "state_dir": str(paths.STATE_DIR),
         "bin": str(paths.CLI_BIN),
         "lib_dir": str(paths.LIB_DIR),
-        "pam_module": str(paths.PAM_MODULE),
+        "pam_module": str(paths.pam_module_installed() or paths.PAM_MODULE),
         "policy_file": str(paths.POLICY_FILE),
         "policy_exists": paths.POLICY_FILE.exists(),
         "vault_exists": paths.VAULT_FILE.exists(),

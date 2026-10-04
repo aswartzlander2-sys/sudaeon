@@ -75,7 +75,8 @@ def _convert(source: Path, target: Path, size: int) -> bool:
     return False
 
 
-def build_icons(target_root: Path | None = None, *, verbose: bool = True) -> dict[str, object]:
+def build_icons(target_root: Path | None = None, *, verbose: bool = True,
+                cache: bool = True) -> dict[str, object]:
     """Render the hicolor icon set.  Returns a report dictionary."""
     source = source_svg()
     report: dict[str, object] = {"source": str(source) if source else None,
@@ -104,7 +105,7 @@ def build_icons(target_root: Path | None = None, *, verbose: bool = True) -> dic
         report["symbolic"] = str(scalar)
     except OSError:
         pass
-    if which("gtk-update-icon-cache") and root.exists():
+    if cache and which("gtk-update-icon-cache") and root.exists():
         run(["gtk-update-icon-cache", "-q", "-t", "-f", str(root)], timeout=60)
     if verbose:
         log(f"icon: {len(report['rendered'])} files from {source}")

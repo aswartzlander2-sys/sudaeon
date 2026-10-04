@@ -33,7 +33,7 @@ def _try(argv: list[str], timeout: float = 15) -> tuple[bool, str]:
     if not which(argv[0]) and not (binary.startswith("/") and __import__("os").path.exists(binary)):
         return False, f"{argv[0]} is not available"
     proc = run(argv, timeout=timeout)
-    output = ((proc.stdout or b"") + (proc.stderr or b"")).decode(errors="replace").strip()
+    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
     if proc.returncode == 0:
         return True, output
     return False, output or f"exit status {proc.returncode}"

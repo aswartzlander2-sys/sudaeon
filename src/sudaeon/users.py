@@ -29,7 +29,7 @@ def session_map() -> dict[int, dict[str, Any]]:
     if not which("loginctl"):
         return out
     proc = run(["loginctl", "list-sessions", "--json=short"], timeout=10)
-    text = (proc.stdout or b"").decode(errors="replace").strip()
+    text = (proc.stdout or "").strip()
     sessions: list[dict[str, Any]] = []
     if text.startswith("["):
         try:
@@ -39,7 +39,7 @@ def session_map() -> dict[int, dict[str, Any]]:
     if not sessions:
         # older systemd: plain text table
         proc = run(["loginctl", "list-sessions", "--no-legend"], timeout=10)
-        for line in (proc.stdout or b"").decode(errors="replace").splitlines():
+        for line in (proc.stdout or "").splitlines():
             parts = line.split()
             if len(parts) < 3:
                 continue
@@ -171,7 +171,7 @@ def sync_admin_group(policy: dict[str, Any], *, apply: bool = True) -> dict[str,
         proc = run(["groupadd", "--system", ADMIN_GROUP], timeout=10)
         if proc.returncode != 0:
             result["errors"].append(
-                (proc.stderr or b"").decode(errors="replace").strip() or "groupadd failed")
+                (proc.stderr or "").strip() or "groupadd failed")
             return result
     current = set(group_members(ADMIN_GROUP))
     for name in sorted(wanted - current):
@@ -180,14 +180,14 @@ def sync_admin_group(policy: dict[str, Any], *, apply: bool = True) -> dict[str,
             result["added"].append(name)
         else:
             result["errors"].append(f"could not add {name}: "
-                                    f"{(proc.stderr or b'').decode(errors='replace').strip()}")
+                                    f"{(proc.stderr or '').strip()}")
     for name in sorted(current - wanted):
         proc = run(["gpasswd", "-d", name, ADMIN_GROUP], timeout=10)
         if proc.returncode == 0:
             result["removed"].append(name)
         else:
             result["errors"].append(f"could not remove {name}: "
-                                    f"{(proc.stderr or b'').decode(errors='replace').strip()}")
+                                    f"{(proc.stderr or '').strip()}")
     result["applied"] = True
     return result
 

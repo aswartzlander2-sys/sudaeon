@@ -125,22 +125,6 @@ static void report(const char *message, int quiet)
     }
 }
 
-static int write_all(int fd, const char *text)
-{
-    size_t len = strlen(text);
-    size_t written = 0;
-    while (written < len) {
-        ssize_t got = write(fd, text + written, len - written);
-        if (got < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            return -1;
-        }
-        written += (size_t)got;
-    }
-    return 0;
-}
 
 int main(int argc, char **argv)
 {

@@ -208,6 +208,11 @@ int  sd_schedule_active(const struct sd_config *cfg, const char *now_iso,
 /* Reads one line (without the newline) from fd.  Returns the length, or -1. */
 int  sd_read_line(int fd, char *out, size_t outlen);
 
+/* Reads a secret without echoing it (termios).  Returns the length, or -1.
+ * When fd is not a terminal the line is read normally, so the checker can be
+ * fed from a pipe as well. */
+int  sd_read_secret(int fd, char *out, size_t outlen);
+
 int  sd_file_exists(const char *path);
 int  sd_write_file(const char *path, const char *text, mode_t mode);
 int  sd_read_file(const char *path, char *out, size_t outlen);

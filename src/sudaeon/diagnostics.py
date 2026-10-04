@@ -59,7 +59,7 @@ def run_checks() -> dict[str, Any]:
                              f"{binary} mode {mode}",
                              "" if setuid else "run: sudo chmod 4755 " + str(binary)))
 
-    module_path = paths.PAM_MODULE if paths.PAM_MODULE.exists() else paths.PAM_MODULE_ALT
+    module_path = paths.pam_module_installed() or paths.PAM_MODULE
     checks.append(_check("pam module",
                          "ok" if module_path.exists() else "fail",
                          str(module_path),
@@ -80,7 +80,7 @@ def run_checks() -> dict[str, Any]:
                          "" if sentinel_unit.exists() else "run 'sudo sudaeon repair'"))
     if which("systemctl"):
         proc = run(["systemctl", "is-active", "sudaeon-sentinel.service"], timeout=10)
-        active = (proc.stdout or b"").decode().strip()
+        active = (proc.stdout or "").strip()
         want = "active" if policy.get("enabled") else "inactive"
         checks.append(_check("sentinel service",
                              "ok" if active in {want, "activating"} else "warn",

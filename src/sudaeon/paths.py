@@ -116,9 +116,38 @@ PAM_SERVICES = {
     "sddm": "root_login",
     "sshd": "root_login",
 }
+# PAM loads modules from a directory that depends on the distribution: Ubuntu
+# and Debian use /usr/lib/<multiarch>/security, older layouts used /lib/security.
+# All of the candidates are probed (inside the sandbox root when one is set).
+def _pam_security_dirs() -> tuple[Path, ...]:
+    base = P("/")
+    found: list[Path] = []
+    seen: set[str] = set()
+    for pattern in ("usr/lib/*-linux-gnu/security", "usr/lib/security",
+                    "lib/*-linux-gnu/security", "lib/security"):
+        for candidate in sorted(base.glob(pattern)):
+            if not candidate.is_dir():
+                continue
+            key = str(candidate.resolve())
+            if key in seen:
+                continue          # /lib is a symlink to /usr/lib on Ubuntu
+            seen.add(key)
+            found.append(candidate)
+    if not found:
+        found.append(P("/lib/security"))
+    return tuple(found)
+
+
 PAM_MODULE_NAME = "pam_sudaeon.so"
-PAM_MODULE = LIB_DIR / PAM_MODULE_NAME
-PAM_MODULE_ALT = P("/lib/security") / PAM_MODULE_NAME
+#: Every directory PAM may load the module from, the preferred one first.
+PAM_SECURITY_DIRS = _pam_security_dirs()
+#: Where the module is installed so that PAM finds it.
+PAM_MODULE = PAM_SECURITY_DIRS[0] / PAM_MODULE_NAME
+#: Legacy fallback (usually the same directory).
+PAM_MODULE_ALT = PAM_SECURITY_DIRS[-1] / PAM_MODULE_NAME
+#: The copy shipped next to the program: the source for repair and for the
+#: PAM module directory, exactly like the compiled helper lives in LIB_DIR.
+PAM_MODULE_SOURCE = LIB_DIR / PAM_MODULE_NAME
 PAM_BACKUP_DIR = P("/var/lib/sudaeon/backup/pam")
 
 DCONF_PROFILE = P("/etc/dconf/profile/user")
@@ -128,6 +157,8 @@ DCONF_FILE = DCONF_DB_DIR / "98-sudaeon"
 DCONF_LOCK_FILE = DCONF_LOCK_DIR / "98-sudaeon"
 
 SYSTEMD_UNIT_DIR = P("/usr/lib/systemd/system")
+TMPFILES_DIR = P("/usr/lib/tmpfiles.d")
+TMPFILES_FILE = TMPFILES_DIR / "sudaeon.conf"
 SYSTEMD_SENTINEL_UNIT = SYSTEMD_UNIT_DIR / "sudaeon-sentinel.service"
 SYSTEMD_USER_UNIT_DIR = P("/usr/lib/systemd/user")
 SYSTEMD_AGENT_UNIT = SYSTEMD_USER_UNIT_DIR / "sudaeon-agent.service"
@@ -185,6 +216,15 @@ DESKTOP_SETUP = APPLICATIONS_DIR / "com.sudaeon.Setup.desktop"
 POLKIT_GUARD = GUARD_BIN
 STAMP_FILE = RUNTIME_DIR / "stamp"
 JOURNAL_DIR = CACHE_DIR / "journal"
+
+
+def pam_module_installed() -> Path | None:
+    """The installed PAM module, wherever this system keeps it (or None)."""
+    for directory in PAM_SECURITY_DIRS:
+        module = directory / PAM_MODULE_NAME
+        if module.exists():
+            return module
+    return None
 
 
 def sentinel_socket() -> Path:

@@ -95,35 +95,38 @@ def _remove_from(text: str) -> tuple[str, bool]:
 
 
 def install_module() -> tuple[bool, str]:
-    """Copy pam_sudaeon.so into the PAM module directory."""
+    """Copy pam_sudaeon.so into every PAM module directory on this system."""
     source = None
-    for candidate in (paths.LIB_DIR / "pam_sudaeon.so",
+    for candidate in (paths.PAM_MODULE_SOURCE,
                       paths.PACKAGE_DIR.parent.parent / "build" / "pam_sudaeon.so"):
         if candidate.exists():
             source = candidate
             break
     if source is None:
         return False, "pam_sudaeon.so has not been built"
-    targets = [paths.PAM_MODULE]
-    if not paths.PAM_MODULE.parent.exists():
-        targets = [paths.PAM_MODULE_ALT]
     installed = False
     errors = []
-    for target in targets:
+    for directory in paths.PAM_SECURITY_DIRS:
+        target = directory / paths.PAM_MODULE_NAME
         try:
-            if target.parent.exists():
-                shutil.copy2(source, target)
-                os.chmod(target, 0o644)
-                installed = True
+            if not directory.is_dir():
+                continue
+            if target.exists() and target.read_bytes() == source.read_bytes():
+                installed = True          # already correct, keep the timestamp
+                continue
+            shutil.copy2(source, target)
+            os.chmod(target, 0o644)
+            installed = True
         except OSError as exc:
             errors.append(f"{target}: {exc}")
     if not installed:
         return False, "; ".join(errors) or "no PAM module directory found"
-    return True, f"installed {source.name}"
+    return True, f"installed {source.name} in {paths.PAM_SECURITY_DIRS[0]}"
 
 
 def remove_module() -> None:
-    for candidate in (paths.PAM_MODULE, paths.PAM_MODULE_ALT):
+    for candidate in [directory / paths.PAM_MODULE_NAME
+                      for directory in paths.PAM_SECURITY_DIRS] + [paths.PAM_MODULE_SOURCE]:
         try:
             candidate.unlink()
         except OSError:
@@ -226,6 +229,6 @@ def verify() -> tuple[bool, str]:
 def status() -> dict[str, Any]:
     return {
         "services": installed_services(),
-        "module_installed": paths.PAM_MODULE.exists() or paths.PAM_MODULE_ALT.exists(),
-        "module_path": str(paths.PAM_MODULE if paths.PAM_MODULE.exists() else paths.PAM_MODULE_ALT),
+        "module_installed": paths.pam_module_installed() is not None,
+        "module_path": str(paths.pam_module_installed() or paths.PAM_MODULE),
     }

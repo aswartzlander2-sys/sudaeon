@@ -17,7 +17,7 @@ def _loginctl_json(*args: str) -> list[dict[str, Any]]:
     if not which("loginctl"):
         return []
     proc = run(["loginctl", *args], timeout=10)
-    text = (proc.stdout or b"").decode(errors="replace").strip()
+    text = (proc.stdout or "").strip()
     if not text.startswith("["):
         return []
     try:

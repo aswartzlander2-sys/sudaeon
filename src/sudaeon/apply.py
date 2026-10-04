@@ -160,7 +160,7 @@ def write_sudoers() -> tuple[bool, str]:
             temp.unlink()
         except OSError:
             pass
-        return False, (proc.stderr or b"").decode(errors="replace").strip() or "visudo rejected the file"
+        return False, (proc.stderr or "").strip() or "visudo rejected the file"
     _backup(paths.SUDOERS_FILE, paths.STATE_DIR / "backup")
     try:
         os.replace(temp, paths.SUDOERS_FILE)
@@ -272,7 +272,7 @@ def systemctl(action: str, unit: str = "sudaeon-sentinel.service", *, timeout: f
     if not which("systemctl"):
         return 127, "systemctl is not available"
     proc = run(["systemctl", action, unit], timeout=timeout)
-    return proc.returncode, (proc.stderr or proc.stdout or b"").decode(errors="replace").strip()
+    return proc.returncode, (proc.stderr or proc.stdout or "").strip()
 
 
 def daemon_reload() -> None:
@@ -348,8 +348,13 @@ def apply_all(policy: dict[str, Any], *, start_sentinel: bool = True,
     return report
 
 
-def uninstall_artifacts(purge: bool = False) -> dict[str, Any]:
-    """Remove everything Sudaeon installed outside of /var/lib/sudaeon."""
+def uninstall_artifacts(purge: bool = False, *, remove_program: bool = True) -> dict[str, Any]:
+    """Remove everything Sudaeon installed outside of /var/lib/sudaeon.
+
+    With ``remove_program=False`` the files that belong to the debian package
+    (the launcher, the library directory, the desktop entry, the unit file and
+    the icons) are left alone: dpkg removes those itself.
+    """
     from . import pam as pam_mod
     report: dict[str, Any] = {"steps": [], "warnings": [], "ok": True}
 
@@ -378,48 +383,48 @@ def uninstall_artifacts(purge: bool = False) -> dict[str, Any]:
     except OSError as exc:
         record("GNOME settings", False, str(exc))
 
-    for path in (paths.SYSTEMD_SENTINEL_UNIT, paths.DESKTOP_MANAGER, paths.DESKTOP_AGENT,
-                 paths.DESKTOP_SETUP, paths.LOGROTATE_FILE):
-        try:
-            path.unlink()
-        except OSError:
-            pass
-    record("files", True, "unit files and desktop entries removed")
-
-    for path in (paths.APPS_DIR / f"{paths.APP_ID}.desktop",):
-        try:
-            path.unlink()
-        except OSError:
-            pass
-
-    for path in (paths.BIN_DIR / "sudaeon",):
-        try:
-            if path.is_symlink() or path.exists():
+    if remove_program:
+        for path in (paths.SYSTEMD_SENTINEL_UNIT, paths.DESKTOP_MANAGER,
+                     paths.DESKTOP_AGENT, paths.DESKTOP_SETUP, paths.LOGROTATE_FILE,
+                     paths.APPS_DIR / f"{paths.APP_ID}.desktop"):
+            try:
                 path.unlink()
+            except OSError:
+                pass
+        record("files", True, "unit files and desktop entries removed")
+
+    if remove_program:
+        for path in (paths.BIN_DIR / "sudaeon",):
+            try:
+                if path.is_symlink() or path.exists():
+                    path.unlink()
+            except OSError as exc:
+                record("cli", False, str(exc))
+
+    if remove_program:
+        try:
+            if paths.LIB_DIR.exists():
+                shutil.rmtree(paths.LIB_DIR)
+            record("library", True, "removed")
         except OSError as exc:
-            record("cli", False, str(exc))
+            record("library", False, str(exc))
 
-    try:
-        if paths.LIB_DIR.exists():
-            shutil.rmtree(paths.LIB_DIR)
-        record("library", True, "removed")
-    except OSError as exc:
-        record("library", False, str(exc))
-
-    for candidate in (paths.PAM_MODULE, paths.PAM_MODULE_ALT):
+    for candidate in [directory / paths.PAM_MODULE_NAME
+                      for directory in paths.PAM_SECURITY_DIRS] + [paths.PAM_MODULE_SOURCE]:
         try:
             candidate.unlink()
         except OSError:
             pass
 
-    icons = list(paths.ICON_ROOT.glob("*/apps/com.sudaeon.*"))
-    for icon in icons:
-        try:
-            icon.unlink()
-        except OSError:
-            pass
-    if which("gtk-update-icon-cache") and paths.ICON_ROOT.exists():
-        run(["gtk-update-icon-cache", "-q", "-t", "-f", str(paths.ICON_ROOT)], timeout=30)
+    if remove_program:
+        for icon in paths.ICON_ROOT.glob("*/apps/com.sudaeon.*"):
+            try:
+                icon.unlink()
+            except OSError:
+                pass
+        if which("gtk-update-icon-cache") and paths.ICON_ROOT.exists():
+            run(["gtk-update-icon-cache", "-q", "-t", "-f", str(paths.ICON_ROOT)],
+                timeout=30)
     if which("update-desktop-database"):
         run(["update-desktop-database", "-q", str(paths.APPS_DIR)], timeout=30)
 

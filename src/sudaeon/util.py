@@ -158,6 +158,12 @@ def _gecos(value: str) -> str:
 def run(argv: Sequence[str], *, timeout: float = 20.0, input_text: str | None = None,
         env: dict[str, str] | None = None, check: bool = False,
         cwd: str | None = None, user: str | None = None) -> subprocess.CompletedProcess:
+    """Run a command and collect its output.
+
+    The command is always run with text I/O, so ``proc.stdout`` and
+    ``proc.stderr`` are ``str`` (never ``bytes``).  Callers that need the bytes
+    of a process they started themselves should use ``subprocess`` directly.
+    """
     argv = [str(item) for item in argv]
     kwargs: dict[str, Any] = {
         "stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "stdin": subprocess.PIPE,

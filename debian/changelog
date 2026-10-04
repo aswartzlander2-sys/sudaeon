@@ -1,0 +1,7 @@
+sudaeon (1.0.0) noble; urgency=medium
+
+  * Initial packaging for Ubuntu 24.04 LTS (noble).
+  * Ships the dashboard, the setuid master password checker, the PAM module,
+    the polkit guard, the sentinel service and the command line tool.
+
+ -- Andrew Swartzlander <aswartzlander2@gmail.com>  Sun, 04 Oct 2026 00:36:40 +0000

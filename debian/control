@@ -1,0 +1,53 @@
+Source: sudaeon
+Section: admin
+Priority: optional
+Maintainer: Andrew Swartzlander <aswartzlander2@gmail.com>
+Homepage: https://github.com/aswartzlander2-sys/sudaeon
+Standards-Version: 4.6.2
+Vcs-Git: https://github.com/aswartzlander2-sys/sudaeon.git
+Vcs-Browser: https://github.com/aswartzlander2-sys/sudaeon
+Rules-Requires-Root: no
+Build-Depends: dpkg-dev (>= 1.19),
+               gcc,
+               libc6-dev | libc-dev,
+               libpam0g-dev,
+               python3 (>= 3.11)
+
+Package: sudaeon
+Architecture: any
+Depends: libc6 (>= 2.35),
+         libpam0g (>= 1.4.0),
+         python3 (>= 3.11),
+         systemd,
+         polkitd | policykit-1,
+         dconf-cli,
+         logrotate,
+         libpam-runtime,
+         sudo | pkexec
+Recommends: python3-gi,
+            gir1.2-gtk-4.0,
+            gir1.2-adw-1
+Suggests: gnome-shell | plasma-desktop | xfce4 | mate-desktop
+Description: parental controls and a master password policy for the desktop
+ Sudaeon puts one master password in front of the actions that matter on a
+ shared computer: rebooting, shutting down, suspending, logging out, switching
+ users, installing software, changing accounts, running sudo in a terminal and
+ starting chosen applications.
+ .
+ The policy is managed from a stock GTK4/libadwaita dashboard with a single
+ "Use Sudaeon" master switch and tabs for Power, Enforcement, Users, Schedule,
+ Applications, Logs and Advanced settings. Accounts are either Administrators
+ (dashboard access, system wide effect), Exempt from Policy or Regular Users.
+ .
+ Enforcement is implemented with the distribution's own mechanisms - PAM for
+ sudo, su and pkexec, polkit rules for graphical administrator prompts, logind
+ inhibitors for power and sleep, dconf lockdown keys for the GNOME session and
+ desktop-entry overrides for application control - so nothing has to be
+ patched and root is never restricted.
+ .
+ The master password is only ever verified by the setuid helper
+ /usr/lib/sudaeon/sudaeon-chkpwd; the dashboard, the CLI and the PAM module
+ never see the verifier and the password is never passed in a command line.
+ .
+ Installing this package does not enforce anything by itself: until the setup
+ wizard stores a master password the policy stays switched off.

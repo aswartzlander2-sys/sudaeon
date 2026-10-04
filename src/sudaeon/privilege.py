@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import paths
-from .util import (debug, error, have, invoking_uid, is_root, log, run, username_of,
+from .util import (debug, have, invoking_uid, is_root, log, run, username_of,
                    which)
 
 
@@ -131,8 +131,8 @@ def call_helper(verb: str, args: Sequence[str] = (), *, stdin: str | None = None
     except FileNotFoundError as exc:
         raise PrivilegeError(f"cannot run {argv[0]}: {exc}") from exc
 
-    stdout = (proc.stdout or b"").decode(errors="replace")
-    stderr = (proc.stderr or b"").decode(errors="replace")
+    stdout = (proc.stdout or "")
+    stderr = (proc.stderr or "")
     result = HelperResult.from_json(stdout or "{}")
     if proc.returncode != 0 and result.ok:
         result.ok = False

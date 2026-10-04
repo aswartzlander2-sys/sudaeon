@@ -1,0 +1,62 @@
+#!/bin/sh
+# Sudaeon post-installation script.
+#
+# dpkg has unpacked the program, the checker, the PAM module, the desktop
+# entry, the service unit and the polkit files.  What is left is the part that
+# only makes sense on the target machine: the state directories, a policy, the
+# PAM lines, the polkit rule, the sudoers drop-in, the dconf lockdown and the
+# service.  That is exactly what "sudaeon configure" does, so it is called
+# here instead of being duplicated in shell.
+#
+# Nothing is enforced until a master password exists: the policy is written
+# with the master switch off.
+set -e
+
+HELPER=/usr/lib/sudaeon/sudaeon-helper
+
+# The account that ran the installation becomes an Administrator.  apt keeps
+# the invoking user in SUDO_USER; a GUI installer usually has neither, and
+# then the account is simply created as a Regular User.
+invoker=""
+if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    invoker="$SUDO_USER"
+elif [ -n "${LOGNAME:-}" ] && [ "${LOGNAME}" != "root" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    invoker="$LOGNAME"
+fi
+invoker=$(printf '%s' "$invoker" | tr -cd 'A-Za-z0-9._-')
+
+configure_sudaeon() {
+    if [ ! -x "$HELPER" ]; then
+        echo "Sudaeon: the helper is missing, run 'sudo sudaeon configure' later." >&2
+        return 0
+    fi
+    if ! printf '\n{"user":"%s"}\n' "$invoker" | "$HELPER" configure-package >/dev/null; then
+        echo "Sudaeon: the automatic configuration did not finish." >&2
+        echo "Sudaeon: run 'sudo sudaeon configure' to try again." >&2
+    fi
+}
+
+refresh_caches() {
+    if [ -x /usr/bin/update-desktop-database ] && [ -d /usr/share/applications ]; then
+        update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
+    fi
+    if [ -x /usr/bin/gtk-update-icon-cache ] && [ -d /usr/share/icons/hicolor ]; then
+        gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
+    fi
+}
+
+case "$1" in
+    configure)
+        configure_sudaeon
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        refresh_caches
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,85 @@
+#!/usr/bin/make -f
+#
+# Sudaeon's Debian packaging rules.
+#
+# There is deliberately no debhelper dependency: a plain "Download ZIP" of the
+# source tree can be turned into a .deb with nothing but build-essential,
+# dpkg-dev, libpam0g-dev and python3 installed, which is what
+# tools/build-deb.sh relies on.  The file layout itself is described once, in
+# the top level Makefile's install target, so the package and a manual
+# "make install" always put the same files in the same places.
+#
+#   dpkg-buildpackage -us -uc -b        build the binary package
+#   make -f debian/rules binary         build the package tree only
+#
+# Rules-Requires-Root is "no" in debian/control, so the build never needs
+# fakeroot: dpkg-deb --root-owner-group makes the archive entries root owned.
+
+DEB_HOST_MULTIARCH := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+PAM_DIR := /usr/lib/$(DEB_HOST_MULTIARCH)/security
+PKG := sudaeon
+PKGROOT := $(CURDIR)/debian/$(PKG)
+
+# Files below /etc that a local administrator may reasonably edit.
+CONFFILES := /etc/logrotate.d/sudaeon \
+             /etc/xdg/autostart/com.sudaeon.Agent.desktop \
+             /etc/sudaeon/README
+
+.PHONY: build build-arch build-indep binary binary-arch binary-indep \
+        clean install-stamp
+
+# ---------------------------------------------------------------------------
+# build
+# ---------------------------------------------------------------------------
+
+build build-arch build-indep: build-stamp
+
+build-stamp:
+	$(MAKE) all
+	$(MAKE) -C tests/c all
+	touch $@
+
+# ---------------------------------------------------------------------------
+# package
+# ---------------------------------------------------------------------------
+
+binary binary-arch: install-stamp
+
+install-stamp: build-stamp
+	rm -rf $(PKGROOT)
+	$(MAKE) install DESTDIR=$(PKGROOT) PREFIX=/usr PAM_DIR=$(PAM_DIR)
+	install -d -m 755 $(PKGROOT)/usr/share/doc/$(PKG)
+	install -m 644 debian/copyright $(PKGROOT)/usr/share/doc/$(PKG)/copyright
+	gzip -9n -c debian/changelog > $(PKGROOT)/usr/share/doc/$(PKG)/changelog.Debian.gz
+	chmod 644 $(PKGROOT)/usr/share/doc/$(PKG)/changelog.Debian.gz
+	@# the Debian specific bits: the maintainer scripts, conffiles, md5sums
+	@# and the control file (debhelper would do this; this packaging does not
+	@# depend on it)
+	install -d -m 755 $(PKGROOT)/DEBIAN
+	for script in preinst postinst prerm postrm config; do \
+		if [ -f debian/$$script ]; then \
+			install -m 755 debian/$$script $(PKGROOT)/DEBIAN/$$script; \
+		fi; \
+	done
+	printf '%s\n' $(CONFFILES) > $(PKGROOT)/DEBIAN/conffiles
+	cd $(PKGROOT) && find . -type f ! -path './DEBIAN/*' -printf '%P\0' \
+		| xargs -0 md5sum > DEBIAN/md5sums
+	dpkg-gencontrol -p$(PKG) -P$(PKGROOT)
+	dpkg-deb --root-owner-group --build $(PKGROOT) $(CURDIR)/..
+	touch $@
+
+binary-indep:
+
+# ---------------------------------------------------------------------------
+# clean
+# ---------------------------------------------------------------------------
+
+clean:
+	rm -rf $(PKGROOT) debian/files debian/*.substvars build-stamp install-stamp
+	rm -rf $(CURDIR)/build $(CURDIR)/dist
+	$(MAKE) -C tests/c clean
+	find . -name '__pycache__' -type d -prune -exec rm -rf {} +
+
+%:
+	@echo "debian/rules: unknown target '$@'" >&2
+	@exit 2

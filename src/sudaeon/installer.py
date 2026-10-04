@@ -129,10 +129,11 @@ def install_system_files(*, from_package: bool = False) -> list[str]:
         except OSError as exc:
             log(f"could not create {link}: {exc}")
 
-    # compiled helpers
+    # compiled helpers: the checker is setuid, the PAM module is copied next to
+    # the program here and into the PAM module directory by pam.apply()
     for source, target, mode in (
         (paths.REPO_DIR / "build" / "sudaeon-chkpwd", paths.CHKPWD_BIN, 0o4755),
-        (paths.REPO_DIR / "build" / "pam_sudaeon.so", paths.PAM_MODULE, 0o644),
+        (paths.REPO_DIR / "build" / "pam_sudaeon.so", paths.PAM_MODULE_SOURCE, 0o644),
     ):
         if source.exists():
             try:
@@ -152,8 +153,9 @@ def install_system_files(*, from_package: bool = False) -> list[str]:
         os.chmod(paths.APPS_DIR / f"{config_icon_id()}.desktop", 0o644)
         steps.append("desktop entry")
         ensure_dir(paths.AUTOSTART_DIR, 0o755)
-        (paths.AUTOSTART_DIR / "com.sudaeon.Permission.agent.desktop").write_text(
-            brand.agent_autostart_entry(), encoding="utf-8")
+        paths.AGENT_AUTOSTART.write_text(brand.agent_autostart_entry(),
+                                         encoding="utf-8")
+        os.chmod(paths.AGENT_AUTOSTART, 0o644)
         ensure_dir(paths.SYSTEMD_SYSTEM_DIR, 0o755)
         (paths.SYSTEMD_SYSTEM_DIR / "sudaeon-sentinel.service").write_text(
             brand.systemd_unit(), encoding="utf-8")
@@ -265,13 +267,15 @@ def install(*, invoking_user: str = "", master_password: str | None = None,
     except OSError as exc:
         record("policy", False, str(exc))
 
-    installstate.write_marker(policy)
-    record("marker", True, str(paths.INSTALL_MARKER))
-
     applied = apply_mod.apply_all(policy, start_sentinel=True)
     for step in applied["steps"]:
         record(f"apply:{step['step']}", step["ok"], step["detail"])
     report["apply"] = applied
+
+    # Only now: a present marker with a missing enforcement.conf makes the PAM
+    # module refuse every managed action, so the file has to exist first.
+    installstate.write_marker(policy)
+    record("marker", True, str(paths.INSTALL_MARKER))
 
     ot, message = pam_mod.verify()
     record("pam verify", ot, message)
@@ -280,6 +284,119 @@ def install(*, invoking_user: str = "", master_password: str | None = None,
     report["policy"] = policy
     audit.append("install", "change", user=invoking_user or "?",
                  detail=f"installed version {APP_VERSION}", source="installer")
+    return report
+
+
+# ---------------------------------------------------------------------------
+# the package (dpkg) path
+# ---------------------------------------------------------------------------
+
+def configure_from_package(*, invoking_user: str = "",
+                           force: bool = False) -> dict[str, Any]:
+    """Finish the system integration after ``dpkg`` unpacked the package.
+
+    The package already put the program, the binaries, the desktop entry, the
+    service unit and the icons in place, so this only does what has to happen
+    on the target machine:
+
+    * create the state layout,
+    * write a *disabled* default policy when there is none yet (the setup
+      wizard turns the master switch on once the master password exists),
+    * render ``enforcement.conf`` and register the PAM, polkit, sudoers and
+      dconf hooks,
+    * enable the sentinel service.
+
+    It never touches an existing master password.  Running it twice is safe.
+    """
+    report: dict[str, Any] = {"ok": True, "steps": [], "warnings": [],
+                              "started": now_iso(), "fresh": False,
+                              "invoking_user": invoking_user}
+
+    def record(name: str, ok: bool, detail: str = "") -> None:
+        report["steps"].append({"step": name, "ok": ok, "detail": detail})
+        if not ok:
+            report["ok"] = False
+            if detail:
+                report["warnings"].append(f"{name}: {detail}")
+
+    if os.geteuid() != 0:
+        record("privileges", False, "configuring Sudaeon requires root")
+        return report
+
+    record("layout", True, f"{len(create_layout())} directories")
+
+    policy = vault.load_policy()
+    fresh = policy is None
+    report["fresh"] = fresh
+    if fresh:
+        policy = config.default_policy()
+        # No master password exists yet, so nothing may be enforced.
+        policy["enabled"] = False
+        install_meta = policy.setdefault("install", {})
+        install_meta.update({
+            "instance_id": installstate.new_instance_id(),
+            "installed_at": now_iso(),
+            "installed_by": invoking_user or username_of(os.getuid()) or "root",
+            "installed_version": APP_VERSION,
+            "source": "package",
+        })
+        if invoking_user and invoking_user != "root":
+            try:
+                config.set_role(policy, invoking_user, config.ROLE_ADMIN)
+                record("administrator", True, f"{invoking_user} may open the dashboard")
+            except ValueError as exc:
+                record("administrator", False, str(exc))
+        config.stamp_policy(policy)
+        try:
+            vault.save_policy(policy)
+            record("policy", True, f"default policy written to {paths.POLICY_FILE}")
+        except OSError as exc:
+            record("policy", False, str(exc))
+    else:
+        record("policy", True, f"kept the existing policy ({config.summary(policy)})")
+
+    # The enforcement file has to exist before the PAM lines and the marker do:
+    # an installed-but-unreadable configuration makes the PAM module fail closed.
+    try:
+        apply_mod.write_enforcement_conf(policy)
+        record("enforcement.conf", True, str(paths.ENFORCEMENT_CONF))
+    except OSError as exc:
+        record("enforcement.conf", False, str(exc))
+        return report
+
+    applied = apply_mod.apply_all(policy, start_sentinel=True,
+                                  verify=not report["fresh"])
+    for step in applied["steps"]:
+        record(f"apply:{step['step']}", step["ok"], step["detail"])
+    report["apply"] = applied
+
+    installstate.write_marker(policy)
+    record("marker", True, str(paths.INSTALL_MARKER))
+
+    ot, message = pam_mod.verify()
+    record("pam verify", ot, message)
+
+    report["configured_version"] = APP_VERSION
+    report["policy"] = policy
+    audit.append("configure-package", "change", user=invoking_user or "?",
+                 detail=f"configured the dpkg installed version {APP_VERSION}",
+                 source="installer")
+    return report
+
+
+def revert_from_package(purge: bool = False) -> dict[str, Any]:
+    """Take the enforcement hooks out again before dpkg removes the files.
+
+    This is what ``prerm`` calls: the PAM lines, the polkit rule and action,
+    the sudoers drop-in and the dconf lockdown all have to disappear before the
+    helper does, but the program files themselves belong to dpkg.
+    """
+    report = apply_mod.uninstall_artifacts(purge=purge, remove_program=False)
+    report["purged"] = purge
+    report["source"] = "package"
+    if os.geteuid() == 0:
+        audit.append("unconfigure-package", "change", source="installer",
+                     detail="removed the enforcement hooks for a package removal")
     return report
 
 

@@ -122,7 +122,7 @@ def verify_master_via_chkpwd(password: str, *, recovery: bool = False,
     if recovery:
         argv.append("--recovery")
     proc = run(argv, input_text=password + "\n", timeout=timeout)
-    err = (proc.stderr or b"").decode(errors="replace").strip()
+    err = (proc.stderr or "").strip()
     return proc.returncode == 0, proc.returncode, err
 
 

@@ -41,7 +41,10 @@ Everyday commands
   version                   print the version
 
 Administrator commands (sudo, or the master password)
-  install [--force]         install Sudaeon system wide
+  install [--force]         install Sudaeon system wide (not needed after
+                            'apt install ./sudaeon_*.deb')
+  configure                 finish a package installation: write the default
+                            policy and the enforcement hooks
   apply                     rewrite every enforcement file from the policy
   repair                    rebuild the verifier and the enforcement files
   reset-password            set a new master password (recovery key or root)
@@ -254,6 +257,21 @@ def cmd_apply(argv: list[str]) -> int:
     password = _password_option(argv) or _ask_master("apply the Sudaeon policy")
     result = privilege.call_helper_with_master("apply-enforcement", password, {},
                                                timeout=300.0)
+    return _helper_result(result)
+
+
+def cmd_configure(_argv: list[str]) -> int:
+    """Finish the system integration after 'apt install ./sudaeon_*.deb'."""
+    user = username_of(invoking_uid()) or ""
+    if _root():
+        from . import installer
+
+        report = installer.configure_from_package(invoking_user=user)
+        for step in report["steps"]:
+            _print(f"{'ok ' if step['ok'] else 'err'} {step['step']}: {step['detail']}")
+        return 0 if report.get("ok") else 1
+    result = privilege.call_helper("configure-package", stdin=json_body({"user": user}),
+                                   timeout=900.0)
     return _helper_result(result)
 
 
@@ -504,6 +522,13 @@ def _prompt_new_password(crypto_mod) -> str:
     return first
 
 
+def json_body(payload: dict[str, Any]) -> str:
+    """A helper stdin body: an empty password line, then the JSON payload."""
+    import json
+
+    return "\n" + json.dumps(payload) if payload else "\n"
+
+
 def _helper_result(result: privilege.HelperResult) -> int:
     if result.ok:
         message = result.message or "done"
@@ -536,6 +561,7 @@ COMMANDS = {
     "app-launch": cmd_app_launch,
     "apply": cmd_apply,
     "repair": cmd_repair,
+    "configure": cmd_configure,
     "recovery": cmd_recovery,
     "change-password": cmd_change_password,
     "reset-password": cmd_reset_password,

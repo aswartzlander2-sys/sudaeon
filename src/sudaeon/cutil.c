@@ -1011,17 +1011,6 @@ static int sd_hex_decode(const char *text, uint8_t *out, size_t outlen)
     return (int)(length / 2);
 }
 
-static void sd_hex_encode(const uint8_t *data, size_t length, char *out)
-{
-    static const char digits[] = "0123456789abcdef";
-    size_t i;
-
-    for (i = 0; i < length; i++) {
-        out[i * 2] = digits[data[i] >> 4];
-        out[i * 2 + 1] = digits[data[i] & 0x0f];
-    }
-    out[length * 2] = '\0';
-}
 
 /*
  * The master verifier is the JSON record written by sudaeon.crypto:
