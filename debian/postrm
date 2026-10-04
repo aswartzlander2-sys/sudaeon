@@ -1,0 +1,17 @@
+#!/bin/sh
+# Sudaeon post-removal script: 'purge' takes the state with it.
+set -e
+
+case "$1" in
+    purge)
+        echo "Sudaeon: removing /var/lib/sudaeon (policy, vault and master" >&2
+        echo "Sudaeon: password verifier) and the audit log in /var/log/sudaeon." >&2
+        rm -rf /var/lib/sudaeon /var/log/sudaeon /run/sudaeon
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,28 @@
+#!/bin/sh
+# Sudaeon pre-removal script.
+#
+# The enforcement hooks have to disappear before the helper does, otherwise a
+# half removed package would still demand a master password for sudo.  The
+# program files themselves are left to dpkg.
+set -e
+
+HELPER=/usr/lib/sudaeon/sudaeon-helper
+
+case "$1" in
+    remove|purge)
+        if [ -x "$HELPER" ]; then
+            printf '\n{"purge":%s}\n' "$([ "$1" = purge ] && echo true || echo false)" \
+                | "$HELPER" unconfigure-package >/dev/null 2>&1 || true
+        fi
+        if [ -d /run/systemd/system ]; then
+            systemctl stop sudaeon-sentinel.service >/dev/null 2>&1 || true
+            systemctl disable sudaeon-sentinel.service >/dev/null 2>&1 || true
+        fi
+        ;;
+    upgrade|deconfigure|failed-upgrade)
+        ;;
+    *)
+        ;;
+esac
+
+exit 0

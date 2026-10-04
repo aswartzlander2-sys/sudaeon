@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Debian packaging output
+debian/sudaeon/
+debian/files
+debian/*.substvars
+debian/.debhelper/
+build-stamp
+install-stamp
+.venv/
+venv/
+
+# C test binaries
+tests/c/build/
+*.o
+*.so
+
+# editor / OS noise
+*.swp
+*~
+.DS_Store
+
+# local scratch
+/tmp/
