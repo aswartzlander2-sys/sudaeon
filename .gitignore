@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# C test binaries
+tests/c/build/
+*.o
+*.so
+
+# editor / OS noise
+*.swp
+*~
+.DS_Store
+
+# local scratch
+/tmp/
